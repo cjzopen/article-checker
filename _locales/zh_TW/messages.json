@@ -1,0 +1,10 @@
+{
+  "appName": {
+    "message": "Article Checker",
+    "description": "The name of the extension"
+  },
+  "appDescription": {
+    "message": "選取網頁內容，基於Gemini AI給予優化建議。",
+    "description": "The description of the extension"
+  }
+}
