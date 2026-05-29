@@ -279,9 +279,9 @@ async function runAnalysis({ blocks, headingMap }, tabId) {
   }
 
   try {
-    const apiModelPro = settings.model || 'gemini-3.1-pro-preview';
+    const apiModelPro = settings.model || 'gemini-3.1-pro';
     const thinkPro = settings.thinkingLevel || 'low';
-    const apiModelFlash = 'gemini-3-flash-preview'; // Updated to your preferred flash mode
+    const apiModelFlash = 'gemini-3.5-flash'; // Updated to your preferred flash mode
 
     const proModelNameDisplay = apiModelPro.includes('flash') ? "進階分析 (Flash)" : "進階分析 (Pro)";
 
