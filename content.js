@@ -13,7 +13,12 @@ if (!window.__articleCheckerLoaded) {
     overlayEl.innerHTML = `
       <div id="ac-card">
         <div id="ac-spinner"></div>
-        <p id="ac-msg">AI 分析中，請稍候⋯</p>
+        <div id="ac-msg">
+          <span id="ac-progress-text">準備分析...</span>
+          <div id="ac-progress-container" style="display: block;">
+            <div id="ac-progress-bar" style="width: 2%;"></div>
+          </div>
+        </div>
       </div>`;
     document.body.appendChild(overlayEl);
   }
@@ -22,7 +27,13 @@ if (!window.__articleCheckerLoaded) {
     ensureOverlay();
     // Reset to loading state
     document.getElementById('ac-spinner').style.display = 'block';
-    document.getElementById('ac-msg').innerHTML = 'AI 分析中，請稍候⋯';
+    const msgContainer = document.getElementById('ac-msg');
+    msgContainer.innerHTML = `
+      <span id="ac-progress-text">準備分析...</span>
+      <div id="ac-progress-container" style="display: block;">
+        <div id="ac-progress-bar" style="width: 2%;"></div>
+      </div>
+    `;
     overlayEl.dataset.state = 'loading';
     overlayEl.style.display = 'flex';
   }
@@ -40,6 +51,16 @@ if (!window.__articleCheckerLoaded) {
 
   function hideOverlay() {
     if (overlayEl) overlayEl.style.display = 'none';
+  }
+
+  function updateProgress(message, percentage) {
+    if (!overlayEl || overlayEl.dataset.state !== 'loading') return;
+    const progressContainer = document.getElementById('ac-progress-container');
+    const progressBar = document.getElementById('ac-progress-bar');
+    const progressText = document.getElementById('ac-progress-text');
+    if (progressContainer) progressContainer.style.display = 'block';
+    if (progressBar) progressBar.style.width = Math.min(100, Math.max(0, percentage)) + '%';
+    if (progressText) progressText.textContent = message;
   }
 
   // ── Selection Mode ────────────────────────────────────────────
@@ -80,7 +101,25 @@ if (!window.__articleCheckerLoaded) {
   function splitElementIntoBlocks(el) {
     const children = Array.from(el.children).filter(c => BLOCK_TAGS.has(c.tagName));
     if (children.length > 1) {
-      return children.map((child, i) => ({ i, c: compressHtml(child.outerHTML) }));
+      const grouped = [];
+      let currentGroup = [];
+      let currentLength = 0;
+      
+      for(let child of children) {
+        const childHtml = compressHtml(child.outerHTML);
+        const childLen = childHtml.length;
+        
+        if (currentGroup.length > 0 && (currentLength + childLen > 800 || currentGroup.length >= 4)) {
+           grouped.push(currentGroup.join(''));
+           currentGroup = [];
+           currentLength = 0;
+        }
+        currentGroup.push(childHtml);
+        currentLength += childLen;
+      }
+      if (currentGroup.length > 0) grouped.push(currentGroup.join(''));
+      
+      return grouped.map((c, i) => ({ i, c }));
     }
     // Single block or inline content
     return [{ i: 0, c: compressHtml(el.outerHTML) }];
@@ -154,6 +193,9 @@ if (!window.__articleCheckerLoaded) {
       sendResponse({ status: 'ok' });
     } else if (request.action === 'showError') {
       showOverlayError(request.message);
+      sendResponse({ status: 'ok' });
+    } else if (request.action === 'updateProgress') {
+      updateProgress(request.message, request.percentage);
       sendResponse({ status: 'ok' });
     } else if (request.action === 'hideOverlay') {
       hideOverlay();

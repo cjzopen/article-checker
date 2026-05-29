@@ -8,11 +8,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const statusDiv = document.getElementById('status');
 
   // Load settings
-  chrome.storage.local.get(['apiKey', 'model', 'thinkingLevel', 'language'], (result) => {
+  chrome.storage.local.get(['apiKey', 'model', 'thinkingLevel', 'language', 'resultMode'], (result) => {
     if (result.apiKey) apiKeyInput.value = result.apiKey;
     if (result.model) modelSelect.value = result.model;
     if (result.thinkingLevel) thinkingLevelSelect.value = result.thinkingLevel;
     if (result.language) languageInput.value = result.language;
+    if (result.resultMode) document.getElementById('result-mode').value = result.resultMode;
   });
 
   // Save settings on change
@@ -21,7 +22,8 @@ document.addEventListener('DOMContentLoaded', () => {
       apiKey: apiKeyInput.value.trim(),
       model: modelSelect.value,
       thinkingLevel: thinkingLevelSelect.value,
-      language: languageInput.value.trim()
+      language: languageInput.value.trim(),
+      resultMode: document.getElementById('result-mode').value
     });
   };
 
@@ -29,6 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
   modelSelect.addEventListener('change', saveSettings);
   thinkingLevelSelect.addEventListener('change', saveSettings);
   languageInput.addEventListener('change', saveSettings);
+  document.getElementById('result-mode').addEventListener('change', saveSettings);
 
   const checkSettings = () => {
     if (!apiKeyInput.value.trim()) {
@@ -113,10 +116,26 @@ document.addEventListener('DOMContentLoaded', () => {
     tmp.innerHTML = processed;
     const children = Array.from(tmp.children).filter(c => BLOCK_TAGS.has(c.tagName));
     if (children.length > 1) {
-      return children
-        .map(child => compressHtml(child.outerHTML))
-        .filter(c => !isUpload || !isEmptyBlock(c))
-        .map((c, i) => ({ i, c }));
+      const grouped = [];
+      let currentGroup = [];
+      let currentLength = 0;
+      
+      for (const child of children) {
+        const childHtml = compressHtml(child.outerHTML);
+        if (isUpload && isEmptyBlock(childHtml)) continue;
+        
+        const childLen = childHtml.length;
+        if (currentGroup.length > 0 && (currentLength + childLen > 800 || currentGroup.length >= 4)) {
+           grouped.push(currentGroup.join(''));
+           currentGroup = [];
+           currentLength = 0;
+        }
+        currentGroup.push(childHtml);
+        currentLength += childLen;
+      }
+      
+      if (currentGroup.length > 0) grouped.push(currentGroup.join(''));
+      return grouped.map((c, i) => ({ i, c }));
     }
     return [{ i: 0, c: compressHtml(tmp.innerHTML || contentText) }];
   }

@@ -1,20 +1,31 @@
 document.addEventListener('DOMContentLoaded', () => {
   const container = document.getElementById('diff-container');
   const btnExport = document.getElementById('btn-export');
+  const btnToggleView = document.getElementById('btn-toggle-view');
+  let isTextMode = false;
   let analysisData = [];
+  let analysisAdvice = [];
   let analysisGaps = [];
   let analysisDesc = [];
 
-  // Result tab only opens after analysis is done, so just read storage directly
-  chrome.storage.local.get(['currentAnalysis', 'analysisGaps', 'analysisDesc'], (result) => {
+  // Result tab only opens after analysis is done
+  chrome.storage.local.get(['currentAnalysis', 'analysisAdvice', 'analysisGaps', 'analysisDesc', 'resultMode'], (result) => {
     if (result.currentAnalysis && Array.isArray(result.currentAnalysis)) {
       analysisData = result.currentAnalysis.map(item => ({
         ...item,
         status: item.changed === false ? 'unchanged' : 'pending'
       }));
+      analysisAdvice = result.analysisAdvice || [];
       analysisGaps = result.analysisGaps || [];
       analysisDesc = result.analysisDesc || [];
-      renderResults();
+      
+      container.innerHTML = '';
+      if (result.resultMode === 'suggest' || result.resultMode === 'direct') {
+        document.querySelector('.header-actions').style.display = 'none';
+      } else {
+        renderResults();
+      }
+      
       renderMeta();
     } else {
       container.innerHTML = '<div class="state-card error"><div class="state-icon">✕</div><h2>找不到分析結果</h2><p>請關閉此分頁並重新分析。</p></div>';
@@ -36,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderResults() {
     container.innerHTML = '';
+    container.style.display = 'flex';
 
     const summary = document.createElement('div');
     summary.className = 'summary-bar';
@@ -56,7 +68,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (item.changed === false) {
         expEl.innerHTML = '<span class="tag unchanged-tag">未修改</span>';
       } else {
-        expEl.innerHTML = `<span class="tag changed-tag">有修改</span> ${escapeHtml(item.explanation || '無說明')}`;
+        const expText = item.explanation ? ` ${escapeHtml(item.explanation)}` : '';
+        expEl.innerHTML = `<span class="tag changed-tag">有修改</span>${expText}`;
       }
 
       const actionsEl = document.createElement('div');
@@ -105,14 +118,36 @@ document.addEventListener('DOMContentLoaded', () => {
       const origLabel = item.status === 'rejected'
         ? '原文 <strong>（使用此版本）</strong>'
         : '原文';
-      origPane.innerHTML = `<h3>${origLabel}</h3><div class="content-display">${escapeHtml(item.original)}</div>`;
+      const origDisplay = document.createElement('div');
+      origDisplay.className = 'content-display';
+      origDisplay.setAttribute('data-raw', item.original);
+      origDisplay.textContent = item.original; // default: source view
+      const origH3 = document.createElement('h3');
+      origH3.className = 'pane-label';
+      origH3.innerHTML = origLabel;
+      origPane.appendChild(origH3);
+      origPane.appendChild(origDisplay);
 
       const modPane = document.createElement('div');
       modPane.className = 'pane modified';
       const modLabel = item.status === 'accepted'
         ? '修改後 <strong>（使用此版本）</strong>'
         : '修改後';
-      modPane.innerHTML = `<h3>${modLabel}</h3><div class="content-display">${escapeHtml(item.modified)}</div>`;
+      const modDisplay = document.createElement('div');
+      modDisplay.className = 'content-display';
+      modDisplay.setAttribute('data-raw', item.modified);
+      modDisplay.textContent = item.modified; // default: source view
+      const modH3 = document.createElement('h3');
+      modH3.className = 'pane-label';
+      modH3.innerHTML = modLabel;
+      modPane.appendChild(modH3);
+      modPane.appendChild(modDisplay);
+      
+      // If already in text mode, render as HTML
+      if (isTextMode) {
+        origDisplay.innerHTML = item.original;
+        modDisplay.innerHTML = item.modified;
+      }
 
       if (item.changed === false) {
         origPane.querySelector('h3').textContent = '原文（無修改）';
@@ -134,6 +169,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // Remove previous meta if re-rendered
     document.querySelectorAll('.meta-section').forEach(el => el.remove());
 
+    if (analysisAdvice.length > 0) {
+      const section = document.createElement('section');
+      section.className = 'meta-section';
+      section.innerHTML = `<h2>整體文章建議（AI可能對事實誤判，需二次查證）</h2>
+        <ol>${analysisAdvice.map(a => `<li>${escapeHtml(a)}</li>`).join('')}</ol>`;
+      document.querySelector('main').appendChild(section);
+    }
+
     if (analysisGaps.length > 0) {
       const section = document.createElement('section');
       section.className = 'meta-section';
@@ -145,15 +188,44 @@ document.addEventListener('DOMContentLoaded', () => {
     if (analysisDesc.length > 0) {
       const section = document.createElement('section');
       section.className = 'meta-section';
-      const cards = analysisDesc.map(d => {
+      const cards = analysisDesc.map((d, index) => {
         const text = escapeHtml(d);
-        const raw = JSON.stringify(d);
-        return `<div class="desc-item" title="點擊複製" onclick="navigator.clipboard.writeText(${raw})">${text}</div>`;
+        return `<div class="desc-item" title="點擊複製" data-desc-index="${index}">${text}</div>`;
       }).join('');
       section.innerHTML = `<h2>📝 文章描述建議（點擊複製）</h2>${cards}`;
+      
+      // Bind click listener safely
+      section.querySelectorAll('.desc-item').forEach(el => {
+        el.addEventListener('click', () => {
+          const idx = parseInt(el.getAttribute('data-desc-index'), 10);
+          const contentToCopy = analysisDesc[idx];
+          navigator.clipboard.writeText(contentToCopy).then(() => {
+            const originalHtml = el.innerHTML;
+            el.innerHTML = '<span style="color:#1a73e8; font-weight:bold;">✅ 已複製！</span>';
+            setTimeout(() => { el.innerHTML = originalHtml; }, 1500);
+          }).catch(err => console.error('複製失敗', err));
+        });
+      });
+      
       document.querySelector('main').appendChild(section);
     }
   }
+
+  // ── Toggle View ───────────────────────────────────────────────
+
+  btnToggleView.addEventListener('click', () => {
+    isTextMode = !isTextMode;
+    document.querySelectorAll('.content-display').forEach(el => {
+      const rawHtml = el.getAttribute('data-raw');
+      if (!rawHtml) return;
+      if (isTextMode) {
+        el.innerHTML = rawHtml; // render as HTML
+      } else {
+        el.textContent = rawHtml; // show raw source
+      }
+    });
+    btnToggleView.textContent = isTextMode ? '🏷️ Source Code Mode' : '📝 Text Mode';
+  });
 
   // ── Export ───────────────────────────────────────────────────
 

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Article Checker Beta",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "選取網頁內容，基於Gemini AI給予優化建議。",
   "author": "cjzopen",
   "default_locale": "zh_TW",
